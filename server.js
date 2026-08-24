@@ -8,6 +8,21 @@ const Space = require("./models/Space");
 const Booking = require("./models/Booking");
 const Block = require("./models/Block");
 const Content = require("./models/Content");
+const Gallery = require("./models/Gallery");
+const multer = require("multer");
+const cloudinary = require("./config/cloudinary");
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
+
+function uploadToCloudinary(buffer) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: "maison-s-galleries" },
+      (err, result) => (err ? reject(err) : resolve(result))
+    );
+    stream.end(buffer);
+  });
+}
 const { signToken, requireAdmin, ADMIN_PASSCODE } = require("./middleware/adminAuth");
 const PORT = process.env.PORT || 4000;
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/maison_s";
@@ -210,6 +225,45 @@ app.post("/api/admin/login", asyncRoute(async (req, res) => {
   }
   res.json({ token: signToken() });
 }));
+
+// ------------------------------------------------------------
+// GALLERIES
+// ------------------------------------------------------------
+
+app.get("/api/galleries", asyncRoute(async (req, res) => {
+  const galleries = await Gallery.find();
+  const map = {};
+  galleries.forEach((g) => { map[g._id] = g.images; });
+  res.json(map);
+}));
+
+app.post("/api/galleries/:cardKey/upload", requireAdmin, upload.single("image"), asyncRoute(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No image file provided." });
+
+  const result = await uploadToCloudinary(req.file.buffer);
+
+  const gallery = await Gallery.findByIdAndUpdate(
+    req.params.cardKey,
+    { $push: { images: result.secure_url } },
+    { upsert: true, new: true }
+  );
+
+  res.status(201).json(gallery.toJSON());
+}));
+
+app.delete("/api/galleries/:cardKey/image", requireAdmin, asyncRoute(async (req, res) => {
+  const { imageUrl } = req.body;
+  if (!imageUrl) return res.status(400).json({ error: "imageUrl is required." });
+
+  const gallery = await Gallery.findByIdAndUpdate(
+    req.params.cardKey,
+    { $pull: { images: imageUrl } },
+    { new: true }
+  );
+
+  res.json(gallery ? gallery.toJSON() : { id: req.params.cardKey, images: [] });
+}));
+
 
 // ------------------------------------------------------------
 // SITE CONTENT
