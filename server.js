@@ -7,7 +7,8 @@ const mongoose = require("mongoose");
 const Space = require("./models/Space");
 const Booking = require("./models/Booking");
 const Block = require("./models/Block");
-
+const Content = require("./models/Content");
+const { signToken, requireAdmin, ADMIN_PASSCODE } = require("./middleware/adminAuth");
 const PORT = process.env.PORT || 4000;
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/maison_s";
 const CORS_ORIGIN = (process.env.CORS_ORIGIN || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -79,7 +80,7 @@ app.get("/api/spaces", asyncRoute(async (req, res) => {
   res.json(spaces.map((s) => s.toJSON()));
 }));
 
-app.post("/api/spaces", asyncRoute(async (req, res) => {
+app.post("/api/spaces", requireAdmin, asyncRoute(async (req, res) => {
   const { name, capacity, description } = req.body;
   if (!name || !String(name).trim()) {
     return res.status(400).json({ error: "Space name is required." });
@@ -94,7 +95,7 @@ app.post("/api/spaces", asyncRoute(async (req, res) => {
   res.status(201).json(space.toJSON());
 }));
 
-app.patch("/api/spaces/:id", asyncRoute(async (req, res) => {
+app.patch("/api/spaces/:id", requireAdmin, asyncRoute(async (req, res) => {
   const space = await Space.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true
@@ -103,7 +104,7 @@ app.patch("/api/spaces/:id", asyncRoute(async (req, res) => {
   res.json(space.toJSON());
 }));
 
-app.delete("/api/spaces/:id", asyncRoute(async (req, res) => {
+app.delete("/api/spaces/:id", requireAdmin, asyncRoute(async (req, res) => {
   await Space.findByIdAndDelete(req.params.id);
   await Block.deleteMany({ spaceId: req.params.id });
   res.status(204).end();
@@ -152,7 +153,7 @@ app.post("/api/bookings", asyncRoute(async (req, res) => {
   res.status(201).json(booking.toJSON());
 }));
 
-app.patch("/api/bookings/:id/status", asyncRoute(async (req, res) => {
+app.patch("/api/bookings/:id/status", requireAdmin, asyncRoute(async (req, res) => {
   const { status } = req.body;
   if (!["pending", "confirmed", "declined"].includes(status)) {
     return res.status(400).json({ error: "Invalid status." });
@@ -166,7 +167,7 @@ app.patch("/api/bookings/:id/status", asyncRoute(async (req, res) => {
   res.json(booking.toJSON());
 }));
 
-app.delete("/api/bookings/:id", asyncRoute(async (req, res) => {
+app.delete("/api/bookings/:id", requireAdmin, asyncRoute(async (req, res) => {
   await Booking.findByIdAndDelete(req.params.id);
   res.status(204).end();
 }));
@@ -180,7 +181,7 @@ app.get("/api/blocks", asyncRoute(async (req, res) => {
   res.json(blocks.map((b) => b.toJSON()));
 }));
 
-app.post("/api/blocks", asyncRoute(async (req, res) => {
+app.post("/api/blocks", requireAdmin, asyncRoute(async (req, res) => {
   const { spaceId, date, reason } = req.body;
   if (!spaceId || !date) {
     return res.status(400).json({ error: "spaceId and date are required." });
@@ -193,15 +194,50 @@ app.post("/api/blocks", asyncRoute(async (req, res) => {
   res.status(201).json(block.toJSON());
 }));
 
-app.delete("/api/blocks/:id", asyncRoute(async (req, res) => {
+app.delete("/api/blocks/:id", requireAdmin, asyncRoute(async (req, res) => {
   await Block.findByIdAndDelete(req.params.id);
   res.status(204).end();
 }));
 
 // ------------------------------------------------------------
+// ADMIN AUTH
+// ------------------------------------------------------------
+
+app.post("/api/admin/login", asyncRoute(async (req, res) => {
+  const { passcode } = req.body;
+  if (passcode !== ADMIN_PASSCODE) {
+    return res.status(401).json({ error: "Incorrect passcode." });
+  }
+  res.json({ token: signToken() });
+}));
+
+// ------------------------------------------------------------
+// SITE CONTENT
+// ------------------------------------------------------------
+
+app.get("/api/content", asyncRoute(async (req, res) => {
+  const items = await Content.find();
+  const map = {};
+  items.forEach((i) => { map[i._id] = i.value; });
+  res.json(map);
+}));
+
+app.patch("/api/content", requireAdmin, asyncRoute(async (req, res) => {
+  const updates = req.body;
+  const ops = Object.entries(updates).map(([key, value]) => ({
+    updateOne: {
+      filter: { _id: key },
+      update: { $set: { value } },
+      upsert: true
+    }
+  }));
+  if (ops.length) await Content.bulkWrite(ops);
+  res.json({ ok: true });
+}));
+
+// ------------------------------------------------------------
 // AVAILABILITY
-// A space is unavailable on a date if it's manually blocked,
-// or already has a CONFIRMED booking for that date. Pending
+// A space is unavailable on a date if it's manually blocked,// or already has a CONFIRMED booking for that date. Pending
 // requests don't occupy the date.
 // ------------------------------------------------------------
 
