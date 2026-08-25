@@ -24,14 +24,22 @@ function uploadToCloudinary(buffer) {
   });
 }
 const { signToken, requireAdmin, ADMIN_PASSCODE } = require("./middleware/adminAuth");
+const { sendBookingNotification, sendCustomerMessage } = require("./utils/mailer");
 const PORT = process.env.PORT || 4000;
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/maison_s";
 const CORS_ORIGIN = (process.env.CORS_ORIGIN || "").split(",").map((s) => s.trim()).filter(Boolean);
 
 const app = express();
 app.use(express.json());
-app.use(cors(CORS_ORIGIN.length ? { origin: CORS_ORIGIN } : {}));
 
+const corsOptions = {
+  origin: CORS_ORIGIN.length ? CORS_ORIGIN : "*",
+  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 // ------------------------------------------------------------
 // Seed data — matches the original localStorage seed exactly,
 // including the fixed space IDs the frontend already expects.
@@ -166,8 +174,37 @@ app.post("/api/bookings", asyncRoute(async (req, res) => {
   });
 
   res.status(201).json(booking.toJSON());
-}));
 
+  // Email the admin — don't let a mail failure break the booking response,
+  // since the booking itself already succeeded and was saved.
+  try {
+    let spaceName = "Any space";
+    if (spaceId) {
+      const space = await Space.findById(spaceId);
+      if (space) spaceName = space.name;
+    }
+    await sendBookingNotification(booking.toJSON(), spaceName);
+  } catch (err) {
+    console.error("Failed to send booking notification email:", err.message);
+  }
+}));
+app.post("/api/bookings/:id/message", requireAdmin, asyncRoute(async (req, res) => {
+  const { subject, message } = req.body;
+
+  if (!subject || !message) {
+    return res.status(400).json({ error: "Subject and message are required." });
+  }
+
+  const booking = await Booking.findById(req.params.id);
+  if (!booking) return res.status(404).json({ error: "Booking not found." });
+
+  if (!booking.email) {
+    return res.status(400).json({ error: "This booking has no email address on file." });
+  }
+
+  await sendCustomerMessage(booking.toJSON(), subject, message);
+  res.json({ ok: true });
+}));
 app.patch("/api/bookings/:id/status", requireAdmin, asyncRoute(async (req, res) => {
   const { status } = req.body;
   if (!["pending", "confirmed", "declined"].includes(status)) {
