@@ -104,7 +104,7 @@ app.get("/api/spaces", asyncRoute(async (req, res) => {
 }));
 
 app.post("/api/spaces", requireAdmin, asyncRoute(async (req, res) => {
-  const { name, capacity, description } = req.body;
+  const { name, capacity, description, pricePerGuest } = req.body;
   if (!name || !String(name).trim()) {
     return res.status(400).json({ error: "Space name is required." });
   }
@@ -113,11 +113,11 @@ app.post("/api/spaces", requireAdmin, asyncRoute(async (req, res) => {
     name: String(name).trim(),
     capacity: Number(capacity) || 1,
     description: (description || "").trim(),
+    pricePerGuest: Number(pricePerGuest) || 0,
     active: true
   });
   res.status(201).json(space.toJSON());
 }));
-
 app.patch("/api/spaces/:id", requireAdmin, asyncRoute(async (req, res) => {
   const space = await Space.findByIdAndUpdate(req.params.id, req.body, {
     new: true,

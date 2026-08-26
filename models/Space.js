@@ -14,6 +14,7 @@ const spaceSchema = new mongoose.Schema({
   name: { type: String, required: true },
   capacity: { type: Number, default: 1 },
   description: { type: String, default: "" },
+  pricePerGuest: { type: Number, default: 0 }, // e.g. 15000 (₦ per guest)
   active: { type: Boolean, default: true }
 });
 
