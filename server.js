@@ -143,7 +143,7 @@ app.get("/api/bookings", asyncRoute(async (req, res) => {
 }));
 
 app.post("/api/bookings", asyncRoute(async (req, res) => {
-  const { type, name, email, phone, guests, date, spaceId, notes } = req.body;
+  const { type, name, email, phone, guests, date, spaceId, notes, proofOfPaymentUrl } = req.body;
 
   if (!date) return res.status(400).json({ error: "A date is required." });
   if (!isHostableDay(date)) {
@@ -170,6 +170,7 @@ app.post("/api/bookings", asyncRoute(async (req, res) => {
     date,
     spaceId: spaceId || null,
     notes: notes || "",
+    proofOfPaymentUrl: proofOfPaymentUrl || "",
     status: "pending"
   });
 

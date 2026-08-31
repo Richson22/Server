@@ -8,6 +8,7 @@ const bookingSchema = new mongoose.Schema({
   guests: { type: Number, default: 1 },
   date: { type: String, required: true }, // "YYYY-MM-DD"
   spaceId: { type: String, default: null },
+  proofOfPaymentUrl: { type: String, default: "" },
   status: {
     type: String,
     enum: ["pending", "confirmed", "declined"],
